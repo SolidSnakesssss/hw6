@@ -61,7 +61,7 @@ struct MyStringHash {
 				}
 
 				for(int i = 0; i < 5; i++){
-					std::cout << "w[" << i << "]: " << w[i] << std::endl;
+					//std::cout << "w[" << i << "]: " << w[i] << std::endl;
 					hash += rValues[i] * w[i];
 				}
 
