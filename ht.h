@@ -103,8 +103,15 @@ public:
     // To be completed
     HASH_INDEX_T next() 
 		{
+			//std::cout << "GORP" << std::endl;
 				HASH_INDEX_T loc = (this->start_ + this->numProbes_ * dhstep_) % this->m_;
 				this->numProbes_++;
+
+				if(this->numProbes_ >= this->m_) {
+						//std::cout << "Gorlp" << std::endl;
+            return this->npos; 
+        }
+
 				return loc;
 		}
 };
@@ -272,8 +279,9 @@ private:
 
     // ADD MORE DATA MEMBERS HERE, AS NECESSARY
 		double resizeAlpha;
-		size_t tableSize;
+		size_t actualSize; //Non-deleted + deleted
 		//std::vector<HashItem*> newTable_;
+		size_t tableSize; //Only Non-deleted
 
 };
 
@@ -297,12 +305,13 @@ HashTable<K,V,Prober,Hash,KEqual>::HashTable(
        :  hash_(hash), kequal_(kequal), prober_(prober)
 {
     // Initialize any other data members as necessary
-    //m_ = CAPACITIES[0];
-		prober_.m_ = CAPACITIES[0];
-		table_.resize(CAPACITIES[0], nullptr);
-		//newTable_.resize(CAPACITIES[0], nullptr);
-    mIndex_ = 0;
-		tableSize = 0;
+		mIndex_ = 0;
+		
+		for (HASH_INDEX_T i=0; i<CAPACITIES[mIndex_]; i++) {
+			table_.push_back(nullptr);
+		}
+
+		actualSize = tableSize = 0;
     this->resizeAlpha = resizeAlpha; // Assign the resizeAlpha parameter to the member variable
 }
 
@@ -310,7 +319,7 @@ HashTable<K,V,Prober,Hash,KEqual>::HashTable(
 template<typename K, typename V, typename Prober, typename Hash, typename KEqual>
 HashTable<K,V,Prober,Hash,KEqual>::~HashTable()
 {
-	// Deallocate memory for each HashItem in the table
+	//Mark the citizen for Treason against Managed Democracy
 	for (size_t i = 0; i < table_.size(); ++i) {
 			if(table_[i] != nullptr){
 				delete table_[i];
@@ -322,6 +331,7 @@ HashTable<K,V,Prober,Hash,KEqual>::~HashTable()
 template<typename K, typename V, typename Prober, typename Hash, typename KEqual>
 bool HashTable<K,V,Prober,Hash,KEqual>::empty() const
 {
+	//return actualSize == 0;
 	return tableSize == 0;
 }
 
@@ -339,17 +349,24 @@ void HashTable<K,V,Prober,Hash,KEqual>::insert(const ItemType& p)
     // Check if resize is needed
     //std::cout << "Current capacity index: " << mIndex_ << std::endl;
 
+		/*
     if ((double)size() / CAPACITIES[mIndex_] >= resizeAlpha) {
-        //std::cout << "Current capacity before change: " << CAPACITIES[mIndex_] << std::endl;
         resize();
-				//prober_.m_ = CAPACITIES[mIndex_];
-        //std::cout << "Current capacity after change: " << CAPACITIES[mIndex_] << std::endl;
     }
+		*/
+
+		if((double)actualSize / CAPACITIES[mIndex_] >= resizeAlpha){
+			resize();
+		}
 
     // Probe for insertion position
     HASH_INDEX_T h = probe(p.first);
 
-    if (h != npos) {
+		if(h == npos) {
+        throw std::logic_error("Cannot insert at location");
+    }
+
+    else {
         // If key already exists, update the value
         if (nullptr != table_[h] && kequal_(table_[h]->item.first, p.first)) {
             table_[h]->item.second = p.second;
@@ -358,13 +375,10 @@ void HashTable<K,V,Prober,Hash,KEqual>::insert(const ItemType& p)
         else {
             // Insert the new item
             table_[h] = new HashItem(p);
-						++tableSize;
+						++actualSize; //Total Size
+						++tableSize; //Size of non-deleted items
         }
     } 
-    
-    else {
-        throw std::logic_error("Cannot insert at location");
-    }
 }
 
 // To be completed
@@ -372,10 +386,14 @@ template<typename K, typename V, typename Prober, typename Hash, typename KEqual
 void HashTable<K,V,Prober,Hash,KEqual>::remove(const KeyType& key)
 {
     HashItem* current = internalFind(key);
+		//HashTable* current = table_->find(key);
+		//ItemType* current = find(key);
+		//HASH_INDEX_T h = probe(key);
 
+		//Mark as delete if key is found
     if(current != nullptr){
         current->deleted = true;
-				--tableSize;
+				--tableSize; //Size of non-deleted items
     }
 }
 
@@ -451,40 +469,39 @@ void HashTable<K,V,Prober,Hash,KEqual>::resize()
 {
 	std::vector<HashItem*> newTable;
     if(mIndex_ + 1 < sizeof(CAPACITIES)){
-        //++mIndex_;
-				//prober_.m_ = CAPACITIES[++mIndex_];
-        //std::cout << mIndex_ << std::endl;
-				newTable.resize(CAPACITIES[mIndex_], nullptr);
+			mIndex_++;
+			for (HASH_INDEX_T i=0; i<CAPACITIES[mIndex_]; i++) {
+				newTable.push_back(nullptr);
+			}
     }
     
     else {
-        throw std::logic_error("No more capacities available for resizing");
+      throw std::logic_error("No more capacities available for resizing");
     }
-
-    // Create a new table of the new size
-    //std::vector<HashItem*> newTable(CAPACITIES[mIndex_], nullptr);
-		//table_.resize(CAPACITIES[mIndex_]);
     
 		// Rehash all non-deleted items into the new table
-    for (HASH_INDEX_T i = 0; i < table_.size(); ++i) {
+		std::vector<HashItem*> oldTable = table_;
+		table_ = newTable;
+    for (HASH_INDEX_T i = 0; i < oldTable.size(); ++i) {
         //std::cout << i << " Real Item" << std::endl;
-        if (table_[i] != nullptr && !table_[i]->deleted) {
-            //std::cout << "Probe Start" << std::endl;
-            HASH_INDEX_T h = probe(table_[i]->item.first); //Segfault here
-            //std::cout << "Probe Finished" << std::endl;
+        
+				//Rehash if there is a HashItem and it aint marked for treason
+				if (oldTable[i] != nullptr && !oldTable[i]->deleted) {
+            HASH_INDEX_T h = probe(oldTable[i]->item.first); //Here
 
-            newTable[h] = table_[i];
+            table_[h] = oldTable[i];
         } 
         
-        else {
-            delete table_[i]; // Free deleted items
+				//Exterminate the bug menace (HashItem marked for removal)
+        else if(oldTable[i] != nullptr && oldTable[i]->deleted){
+            delete oldTable[i]; // Free deleted items
+						--actualSize;
         }
-    }
 
-    // Copy the contents of the new table to the old table
-		mIndex_++;
-    table_.clear();
-    table_.insert(table_.begin(), newTable.begin(), newTable.end());
+				else{
+					continue;
+				}
+    }
 }
 
 // Almost complete
@@ -503,11 +520,11 @@ HASH_INDEX_T HashTable<K,V,Prober,Hash,KEqual>::probe(const KeyType& key) const
         }
         // fill in the condition for this else if statement which should 
         // return 'loc' if the given key exists at this location
-				//std::cout << CAPACITIES[mIndex_] << " Current Probing: " << loc << std::endl;
-				//std::cout << table_[loc]->item.first << std::endl;
-        if(kequal_(table_[loc]->item.first, key)) { //Here else-if
+				else if(kequal_(table_[loc]->item.first, key) && !table_[loc]->deleted) {
             return loc;
         }
+				//std::cout << "Uh Oh" << std::endl;
+
         loc = prober_.next();
         totalProbes_++;
     }
